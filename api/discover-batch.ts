@@ -39,6 +39,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json(createFallbackOutput(companies));
     }
 
+    console.log('Step 1: Researching companies...');
+
     // Step 1: Research all companies
     const companyResearch = await Promise.all(
       companies.map(async (company) => ({
@@ -49,12 +51,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }))
     );
 
+    console.log('Step 2: Extracting entities...');
+
     // Step 2: Extract raw entities from each company
     const allRawEntities: Array<{ ticker: string; entity: RawEntity }> = [];
     const companiesWithRawEntities: Array<{ company: ParsedCompany; rawEntities: RawEntity[] }> = [];
 
     for (const { company, research } of companyResearch) {
       const rawEntities = await extractRawEntities(company, research, claudeApiKey);
+      console.log(`${company.ticker}: extracted ${rawEntities.length} entities`);
       companiesWithRawEntities.push({ company, rawEntities });
       
       for (const entity of rawEntities) {
@@ -62,24 +67,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Step 3: Semantic entity resolution - Claude determines which entities are the same
+    // Step 3: Semantic entity resolution
+    console.log('Step 3: Resolving entities semantically...');
     const entityNames = [...new Set(allRawEntities.map(e => e.entity.name))];
+    console.log(`Unique entity names to resolve: ${entityNames.length}`);
+    
     const resolvedNames = await resolveEntitiesSemantically(entityNames, claudeApiKey);
 
     // Step 4: Build final relationships with resolved names
+    console.log('Step 4: Building relationships...');
     const companiesWithRelationships = companiesWithRawEntities.map(({ company, rawEntities }) => {
-      const relationships: Relationship[] = rawEntities.map(entity => ({
-        entity_name: resolvedNames.get(entity.name) || entity.name,
-        entity_type: mapEntityType(entity.type),
-        category: entity.type,
-        details: entity.details,
-      }));
+      const relationships: Relationship[] = rawEntities.map(entity => {
+        const resolvedName = resolvedNames.get(entity.name) || entity.name;
+        return {
+          entity_name: resolvedName,
+          entity_type: mapEntityType(entity.type),
+          category: entity.type,
+          details: entity.details,
+        };
+      });
       
       return { ...company, relationships, processing_status: 'completed' as const };
     });
 
     // Step 5: Calculate WHO CARES
+    console.log('Step 5: Calculating WHO CARES...');
     const whoCares = calculateWhoCaresFromRelationships(companiesWithRelationships);
+    console.log(`Found ${whoCares.length} multi-exposure entities`);
 
     return res.json({
       companies: companiesWithRelationships,
@@ -131,7 +145,10 @@ async function researchWithPerplexity(company: ParsedCompany, apiKey: string): P
         }),
       });
 
-      if (!response.ok) continue;
+      if (!response.ok) {
+        console.error(`Perplexity error for ${company.ticker}: ${response.status}`);
+        continue;
+      }
 
       const data = await response.json() as any;
       const answer = data.choices?.[0]?.message?.content || '';
@@ -171,10 +188,10 @@ Extract entities into categories:
 - supplier
 - customer
 
-Return JSON array. Include EVERY entity mentioned:
+Return ONLY a JSON array with no markdown formatting:
 [{"name": "Full Entity Name", "type": "category", "details": "specific details"}]
 
-IMPORTANT: Include the external auditor even if you need to use your knowledge.`;
+IMPORTANT: Include the external auditor. Do not wrap response in code blocks.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -191,12 +208,22 @@ IMPORTANT: Include the external auditor even if you need to use your knowledge.`
       }),
     });
 
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.error(`Entity extraction API error for ${company.ticker}: ${response.status}`);
+      return [];
+    }
 
     const data = await response.json() as any;
     const text = data.content?.[0]?.text || '';
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return [];
+    
+    // Strip markdown code blocks if present
+    let cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    
+    const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      console.error(`No JSON array found for ${company.ticker}`);
+      return [];
+    }
 
     return JSON.parse(jsonMatch[0]);
   } catch (error) {
@@ -213,36 +240,30 @@ async function resolveEntitiesSemantically(
 ): Promise<Map<string, string>> {
   if (entityNames.length === 0) return new Map();
 
-  const prompt = `You are an expert at entity resolution. Below is a list of entity names extracted from multiple companies. Many of these refer to the SAME entity but with different naming variations.
+  console.log(`Resolving ${entityNames.length} entities semantically...`);
+
+  const prompt = `You are an expert at entity resolution. Below is a list of entity names extracted from multiple companies. Many refer to the SAME entity with different naming variations.
 
 ENTITY LIST:
 ${entityNames.map((name, i) => `${i + 1}. ${name}`).join('\n')}
 
-Your task: Identify which entities are THE SAME and assign them a single canonical name.
+Your task: Identify which entities are THE SAME and assign a single canonical name.
 
-Rules for matching:
-- "Ernst & Young (EY)", "EY", "Ernst & Young Australia" → all become "Ernst & Young"
-- "BlackRock Group", "BlackRock, Inc.", "BlackRock Inc" → all become "BlackRock"
-- "State Street Corporation and subsidiaries", "State Street" → all become "State Street"
-- "Vanguard funds", "The Vanguard Group", "Vanguard" → all become "Vanguard"
-- "Macquarie Group Limited", "Macquarie", "Macquarie Capital" → all become "Macquarie"
+Matching rules:
+- "Ernst & Young (EY)", "EY", "Ernst & Young Australia" → "Ernst & Young"
+- "BlackRock Group", "BlackRock, Inc." → "BlackRock"
+- "State Street Corporation and subsidiaries", "State Street" → "State Street"
+- "Vanguard funds", "The Vanguard Group" → "Vanguard"
+- "Macquarie Group Limited", "Macquarie Capital" → "Macquarie"
 - "HSBC Custody Nominees (Australia) Limited" → "HSBC Custody Nominees"
-- "J P Morgan Nominees Australia Pty Limited" → "JP Morgan Nominees"
-- "Sonic Healthcare Ltd (ASX: SHL)", "Sonic Healthcare" → "Sonic Healthcare"
-- "Australian Competition and Consumer Commission", "ACCC" → "ACCC"
-- Government bodies, regulators use acronyms: ASIC, ACCC, ASX, ATO, APRA
+- "Sonic Healthcare Ltd (ASX: SHL)" → "Sonic Healthcare"
+- "Australian Competition and Consumer Commission" → "ACCC"
+- Remove suffixes: Ltd, Limited, Pty, Inc, Corporation, Group, Australia
+- Government bodies use acronyms: ASIC, ACCC, ASX, ATO, APRA
+- People: normalize variations like "Kate (Kathryn) McKenzie" → "Kate McKenzie"
 
-People names: Keep full names, but match variations:
-- "Kate McKenzie", "Kate (Kathryn) McKenzie", "Kathryn McKenzie" → "Kate McKenzie"
-
-Return a JSON object mapping EVERY original name to its canonical form:
-{
-  "original name 1": "canonical name",
-  "original name 2": "canonical name",
-  ...
-}
-
-Include ALL ${entityNames.length} entities in your response.`;
+Return ONLY a JSON object mapping every original name to its canonical form. No markdown, no explanation:
+{"original name": "canonical name", ...}`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -267,14 +288,30 @@ Include ALL ${entityNames.length} entities in your response.`;
     const data = await response.json() as any;
     const text = data.content?.[0]?.text || '';
     
+    console.log('Resolution response length:', text.length);
+    
+    // Strip markdown code blocks if present
+    let cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    
     // Extract JSON object from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('No JSON found in resolution response');
+      console.error('No JSON found in resolution response. First 500 chars:', cleanText.substring(0, 500));
       return new Map(entityNames.map(n => [n, n]));
     }
 
     const mappings = JSON.parse(jsonMatch[0]);
+    const mappingCount = Object.keys(mappings).length;
+    console.log(`Resolved ${mappingCount} entity mappings`);
+    
+    // Log some example mappings to verify normalization
+    const examples = Object.entries(mappings).slice(0, 5);
+    console.log('Example mappings:', JSON.stringify(examples));
+    
+    // Count how many were actually normalized (different from original)
+    const normalizedCount = Object.entries(mappings).filter(([orig, canon]) => orig !== canon).length;
+    console.log(`Entities normalized: ${normalizedCount} of ${mappingCount}`);
+
     return new Map(Object.entries(mappings));
   } catch (error) {
     console.error('Entity resolution error:', error);
