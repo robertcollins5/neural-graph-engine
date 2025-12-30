@@ -36,7 +36,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const claudeApiKey = process.env.ANTHROPIC_API_KEY;
     const serpApiKey = process.env.SERPAPI_KEY;
 
-    // Use hybrid approach if SerpAPI available, otherwise Claude-only
     let companiesWithRelationships;
     
     if (serpApiKey && claudeApiKey) {
@@ -78,8 +77,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// ============ HYBRID DISCOVERY (SerpAPI + Claude) ============
-
 async function discoverBatchHybrid(
   companies: ParsedCompany[],
   serpApiKey: string,
@@ -87,10 +84,7 @@ async function discoverBatchHybrid(
 ): Promise<Array<ParsedCompany & { relationships: Relationship[] }>> {
   const results = await Promise.all(
     companies.map(async (company) => {
-      // Step 1: Get real search results from SerpAPI
       const searchData = await gatherSearchData(company, serpApiKey);
-      
-      // Step 2: Use Claude to analyse and extract relationships
       const relationships = await analyseWithClaude(company, searchData, claudeApiKey);
       
       return {
@@ -219,8 +213,6 @@ IMPORTANT: Only include entities actually mentioned in the search results. Inclu
   }
 }
 
-// ============ CLAUDE-ONLY DISCOVERY (fallback) ============
-
 async function discoverBatchWithClaude(
   companies: ParsedCompany[],
   apiKey: string
@@ -293,8 +285,6 @@ Format your response as a JSON array:
     return [];
   }
 }
-
-// ============ UTILITIES ============
 
 function mapEntityType(type: string): 'company' | 'person' | 'firm' {
   const typeMap: Record<string, 'company' | 'person' | 'firm'> = {
