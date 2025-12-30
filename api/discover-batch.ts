@@ -71,6 +71,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json(createFallbackBatchOutput(companies));
     }
 
+    // Normalize entity names for better matching
+    companiesWithRelationships = normalizeAllEntityNames(companiesWithRelationships);
+
     const whoCares = calculateWhoCaresFromRelationships(companiesWithRelationships);
 
     return res.json({
@@ -88,6 +91,211 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('Batch discovery error:', error);
     return res.status(500).json({ error: 'Discovery failed' });
   }
+}
+
+// ============ ENTITY NAME NORMALIZATION ============
+
+function normalizeAllEntityNames(
+  companies: Array<ParsedCompany & { relationships: Relationship[] }>
+): Array<ParsedCompany & { relationships: Relationship[] }> {
+  return companies.map(company => ({
+    ...company,
+    relationships: company.relationships.map(rel => ({
+      ...rel,
+      entity_name: normalizeEntityName(rel.entity_name),
+    })),
+  }));
+}
+
+function normalizeEntityName(name: string): string {
+  let normalized = name.trim();
+  
+  // Known entity mappings (aliases → canonical name)
+  const knownEntities: Record<string, string> = {
+    // Auditors
+    'ernst & young': 'Ernst & Young',
+    'ey': 'Ernst & Young',
+    'ernst & young (ey)': 'Ernst & Young',
+    'pricewaterhousecoopers': 'PwC',
+    'pwc': 'PwC',
+    'pricewaterhousecoopers (pwc)': 'PwC',
+    'kpmg australia': 'KPMG',
+    'kpmg': 'KPMG',
+    'deloitte touche tohmatsu': 'Deloitte',
+    'deloitte': 'Deloitte',
+    'bdo australia': 'BDO',
+    'bdo': 'BDO',
+    
+    // Major shareholders/custodians
+    'hsbc custody nominees (australia) limited': 'HSBC Custody Nominees',
+    'hsbc custody nominees': 'HSBC Custody Nominees',
+    'j p morgan nominees australia pty limited': 'JP Morgan Nominees',
+    'jp morgan nominees australia': 'JP Morgan Nominees',
+    'j.p. morgan': 'JP Morgan',
+    'citicorp nominees pty limited': 'Citicorp Nominees',
+    'national nominees limited': 'National Nominees',
+    'bnp paribas nominees pty ltd': 'BNP Paribas Nominees',
+    
+    // Asset managers
+    'blackrock, inc.': 'BlackRock',
+    'blackrock inc': 'BlackRock',
+    'blackrock group': 'BlackRock',
+    'blackrock': 'BlackRock',
+    'vanguard group': 'Vanguard',
+    'the vanguard group': 'Vanguard',
+    'vanguard funds': 'Vanguard',
+    'vanguard': 'Vanguard',
+    'state street corporation': 'State Street',
+    'state street corporation and subsidiaries': 'State Street',
+    'state street': 'State Street',
+    'fidelity investments': 'Fidelity',
+    'fidelity': 'Fidelity',
+    'fil limited': 'Fidelity',
+    
+    // Banks/Brokers
+    'macquarie group limited': 'Macquarie',
+    'macquarie group': 'Macquarie',
+    'macquarie capital': 'Macquarie',
+    'macquarie bank': 'Macquarie',
+    'macquarie': 'Macquarie',
+    'goldman sachs': 'Goldman Sachs',
+    'goldman sachs australia': 'Goldman Sachs',
+    'ubs': 'UBS',
+    'ubs australia': 'UBS',
+    'morgan stanley': 'Morgan Stanley',
+    'morgan stanley australia': 'Morgan Stanley',
+    'citi': 'Citi',
+    'citigroup': 'Citi',
+    'citibank': 'Citi',
+    'jp morgan': 'JP Morgan',
+    'jpmorgan': 'JP Morgan',
+    'j.p. morgan chase': 'JP Morgan',
+    'bell potter': 'Bell Potter',
+    'bell potter securities': 'Bell Potter',
+    
+    // PE Firms
+    'kkr': 'KKR',
+    'kkr & co': 'KKR',
+    'kohlberg kravis roberts': 'KKR',
+    'tpg': 'TPG',
+    'tpg capital': 'TPG',
+    'carlyle': 'Carlyle Group',
+    'carlyle group': 'Carlyle Group',
+    'bgh capital': 'BGH Capital',
+    'affinity equity partners': 'Affinity Equity Partners',
+    'brookfield': 'Brookfield',
+    'brookfield asset management': 'Brookfield',
+    
+    // Government/Regulators
+    'accc': 'ACCC',
+    'australian competition and consumer commission': 'ACCC',
+    'asic': 'ASIC',
+    'australian securities and investments commission': 'ASIC',
+    'asx': 'ASX',
+    'australian securities exchange': 'ASX',
+    'ato': 'ATO',
+    'australian taxation office': 'ATO',
+    'apra': 'APRA',
+    'australian prudential regulation authority': 'APRA',
+    
+    // Share registries
+    'link market services': 'Link Market Services',
+    'link administration': 'Link Market Services',
+    'computershare': 'Computershare',
+    'computershare limited': 'Computershare',
+    
+    // Healthcare companies (for this demo)
+    'sonic healthcare': 'Sonic Healthcare',
+    'sonic healthcare ltd': 'Sonic Healthcare',
+    'sonic healthcare ltd (asx: shl)': 'Sonic Healthcare',
+    'sonic healthcare (asx: shl)': 'Sonic Healthcare',
+    'healius': 'Healius',
+    'healius limited': 'Healius',
+    'healius ltd': 'Healius',
+    'ramsay health care': 'Ramsay Health Care',
+    'ramsay health care limited': 'Ramsay Health Care',
+    'healthscope': 'Healthscope',
+    'healthscope limited': 'Healthscope',
+    'australian clinical labs': 'Australian Clinical Labs',
+    'australian clinical labs ltd': 'Australian Clinical Labs',
+    'australian clinical labs ltd (asx: acl)': 'Australian Clinical Labs',
+    
+    // Superannuation
+    'australian retirement trust': 'Australian Retirement Trust',
+    'australian retirement trust pty ltd': 'Australian Retirement Trust',
+    'unisuper': 'UniSuper',
+    'unisuper limited': 'UniSuper',
+    'aware super': 'Aware Super',
+    'cbus': 'Cbus',
+    'cbus super': 'Cbus',
+    'hostplus': 'Hostplus',
+    'rest super': 'REST Super',
+    
+    // Investment firms
+    'perpetual limited': 'Perpetual',
+    'perpetual': 'Perpetual',
+    'allan gray': 'Allan Gray',
+    'allan gray australia': 'Allan Gray',
+    'allan gray australia pty ltd': 'Allan Gray',
+    'dimensional fund advisors': 'DFA',
+    'dfa': 'DFA',
+    'lazard asset management': 'Lazard',
+    'lazard': 'Lazard',
+  };
+  
+  // Check known entities first (case-insensitive)
+  const lowerName = normalized.toLowerCase();
+  if (knownEntities[lowerName]) {
+    return knownEntities[lowerName];
+  }
+  
+  // Check if name contains a known entity
+  for (const [alias, canonical] of Object.entries(knownEntities)) {
+    if (lowerName.includes(alias)) {
+      return canonical;
+    }
+  }
+  
+  // Remove common suffixes
+  const suffixPatterns = [
+    /\s*\(asx:\s*[a-z]+\)/i,  // (ASX: XXX)
+    /\s*\([a-z]{2,4}\)/i,     // (XXX) ticker
+    /\s*pty\.?\s*ltd\.?/i,    // Pty Ltd
+    /\s*limited$/i,           // Limited
+    /\s*ltd\.?$/i,            // Ltd
+    /\s*inc\.?$/i,            // Inc
+    /\s*incorporated$/i,      // Incorporated
+    /\s*corporation$/i,       // Corporation
+    /\s*corp\.?$/i,           // Corp
+    /\s*&\s*co\.?$/i,         // & Co
+    /\s*and\s+subsidiaries$/i, // and subsidiaries
+    /\s*group$/i,             // Group
+    /\s*holdings$/i,          // Holdings
+    /\s*australia$/i,         // Australia (at end)
+  ];
+  
+  for (const pattern of suffixPatterns) {
+    normalized = normalized.replace(pattern, '');
+  }
+  
+  // Clean up extra whitespace
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+  
+  // Title case for consistency
+  if (normalized.length > 0) {
+    normalized = normalized
+      .split(' ')
+      .map(word => {
+        // Keep acronyms uppercase
+        if (word.length <= 4 && word === word.toUpperCase()) {
+          return word;
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
+  }
+  
+  return normalized;
 }
 
 // ============ PERPLEXITY DISCOVERY ============
@@ -182,12 +390,17 @@ Extract every entity into these categories:
 12. SUPPLIERS - key B2B suppliers
 13. CUSTOMERS - major B2B customers
 
+IMPORTANT: Use simple, canonical names for entities:
+- Use "Ernst & Young" not "Ernst & Young (EY)"
+- Use "Sonic Healthcare" not "Sonic Healthcare Ltd (ASX: SHL)"
+- Use "BlackRock" not "BlackRock, Inc."
+- Use "Macquarie" not "Macquarie Group Limited"
+- Use "ACCC" not "Australian Competition and Consumer Commission"
+
 Format as JSON array:
 [
   {"name": "Entity Name", "type": "shareholder|director|executive|auditor|broker|advisor|competitor|pe_firm|lender|government|registry|supplier|customer", "details": "specific details with percentages, roles, dates"}
-]
-
-IMPORTANT: Extract EVERY entity mentioned. Include specific details like "12.5% shareholding" or "Chairman since 2019".`;
+]`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -306,6 +519,8 @@ Include:
 5. Brokers with coverage
 6. Competitors
 7. PE firms with interest
+
+Use simple canonical names (e.g., "Ernst & Young" not "EY", "Macquarie" not "Macquarie Group Limited").
 
 Format as JSON array:
 [{"name": "Entity", "type": "shareholder|director|executive|auditor|broker|competitor|pe_firm", "details": "specific details"}]`;
