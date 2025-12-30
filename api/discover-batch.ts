@@ -5,6 +5,9 @@ interface ParsedCompany {
   ticker: string;
   exchange: string;
   stress_signal?: string;
+  event_type?: string;
+  severity?: string;
+  industry?: string;
 }
 
 interface Relationship {
@@ -18,6 +21,15 @@ interface RawEntity {
   name: string;
   type: string;
   details: string;
+}
+
+interface WhoCares {
+  entity_name: string;
+  entity_type: string;
+  category: string;
+  exposure_count: number;
+  exposed_companies: string[];
+  exposure_details: Array<{ ticker: string; relationship_type: string }>;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -95,9 +107,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const whoCares = calculateWhoCaresFromRelationships(companiesWithRelationships);
     console.log(`Found ${whoCares.length} multi-exposure entities`);
 
+    // Step 6: Generate narrative summary
+    console.log('Step 6: Generating narrative summary...');
+    const narrativeSummary = await generateNarrativeSummary(companies, whoCares, claudeApiKey);
+
     return res.json({
       companies: companiesWithRelationships,
       who_cares: whoCares,
+      narrative_summary: narrativeSummary,
       processing_stats: {
         total_companies: companies.length,
         total_relationships: companiesWithRelationships.reduce((sum, c) => sum + c.relationships.length, 0),
@@ -112,30 +129,121 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+// ============ NARRATIVE SUMMARY ============
+
+async function generateNarrativeSummary(
+  companies: ParsedCompany[],
+  whoCares: WhoCares[],
+  apiKey: string
+): Promise<object> {
+  if (whoCares.length === 0) {
+    return {
+      headline: "No multi-exposure entities identified",
+      key_findings: ["No entities found with exposure to multiple companies in this analysis."],
+      suggested_approaches: [],
+      disclaimer: "Signal6 provides indicative insights, not predictive claims."
+    };
+  }
+
+  const prompt = `You are a business intelligence analyst for advisory firms (executive recruiters, strategy consultants, restructuring advisors). Generate an executive summary of these findings.
+
+STRESSED COMPANIES ANALYSED:
+${companies.map(c => `• ${c.name} (${c.ticker}): ${c.stress_signal || 'Stress signal detected'}`).join('\n')}
+
+MULTI-EXPOSURE ENTITIES FOUND (entities connected to 2+ stressed companies):
+${whoCares.slice(0, 10).map(w => `• ${w.entity_name} (${w.category}): Connected to ${w.exposed_companies.join(', ')} - ${w.exposure_count} companies`).join('\n')}
+
+Generate a JSON response with this structure:
+{
+  "headline": "One sentence summary of the overall finding",
+  "key_findings": [
+    "Bullet point 1 - most significant cross-exposure and why it matters",
+    "Bullet point 2 - second finding",
+    "Bullet point 3 - third finding"
+  ],
+  "suggested_approaches": [
+    {"target": "Entity name", "angle": "How to approach them", "advisory_type": "e.g., Board Advisory, Restructuring, Compliance"},
+    {"target": "Entity name", "angle": "How to approach them", "advisory_type": "e.g., Executive Search, Strategy"}
+  ],
+  "disclaimer": "Signal6 provides indicative insights, not predictive claims."
+}
+
+IMPORTANT RULES:
+- Use words like "indicative", "suggests", "may signal" - NOT "will", "predicts", "guarantees"
+- Focus on multi-exposure as the key insight
+- Keep findings concise - max 30 words per bullet
+- Maximum 3 key findings, maximum 3 suggested approaches
+- Return ONLY valid JSON, no markdown`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Narrative generation API error:', response.status);
+      return createFallbackNarrative(companies, whoCares);
+    }
+
+    const data = await response.json() as any;
+    const text = data.content?.[0]?.text || '';
+    
+    // Strip markdown code blocks if present
+    let cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error('No JSON found in narrative response');
+      return createFallbackNarrative(companies, whoCares);
+    }
+
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error('Narrative generation error:', error);
+    return createFallbackNarrative(companies, whoCares);
+  }
+}
+
+function createFallbackNarrative(companies: ParsedCompany[], whoCares: WhoCares[]): object {
+  const topEntity = whoCares[0];
+  return {
+    headline: `${whoCares.length} entities identified with multi-company exposure across ${companies.length} stressed companies.`,
+    key_findings: [
+      `${topEntity?.entity_name || 'Key entity'} has exposure to ${topEntity?.exposure_count || 'multiple'} companies, indicating potential advisory opportunity.`,
+      `Cross-exposure patterns suggest sector-wide stress affecting common stakeholders.`,
+      `Multi-exposure entities may be navigating similar challenges across their portfolio or board positions.`
+    ],
+    suggested_approaches: [
+      {
+        target: topEntity?.entity_name || 'Top multi-exposure entity',
+        angle: 'Reference their dual exposure to open conversation',
+        advisory_type: topEntity?.category === 'director' ? 'Board Advisory' : 'Strategic Advisory'
+      }
+    ],
+    disclaimer: "Signal6 provides indicative insights, not predictive claims."
+  };
+}
+
 // ============ PERPLEXITY RESEARCH ============
 
 async function researchWithPerplexity(company: ParsedCompany, apiKey: string): Promise<string> {
-  // Expanded queries targeting exec recruiters, strategy, compliance, restructuring firms
   const queries = [
-    // Shareholders & Ownership
     `Who are the top 10 substantial shareholders of ${company.name} (ASX: ${company.ticker})? Include percentage holdings, institutional investors, private equity firms, and activist shareholders.`,
-    
-    // Board & Executives (key for exec recruiters)
     `Who are all board directors and executives of ${company.name} (ASX: ${company.ticker})? Include Chairman, CEO, CFO, all non-executive directors with their roles. Note any recent departures, appointments, or upcoming retirements.`,
-    
-    // Auditors & Professional Advisors (key for Big 4)
     `Who are the professional advisors of ${company.name} (ASX: ${company.ticker})? Include external auditor, legal counsel, M&A advisors, corporate brokers, share registry, and any restructuring or turnaround advisors.`,
-    
-    // Competitors & PE Interest
     `Who are the main ASX-listed competitors of ${company.name} (${company.ticker})? Also list any private equity firms that have shown acquisition interest in this company or sector, including failed bids.`,
-    
-    // Lenders & Financial Stress (key for restructuring)
     `Who are the lenders and debt providers to ${company.name} (ASX: ${company.ticker})? Include any debt facilities, covenant issues, refinancing activity, or financial stress indicators.`,
-    
-    // Regulatory & Compliance (key for compliance advisors)
     `Has ${company.name} (ASX: ${company.ticker}) faced any regulatory scrutiny, ASIC or ACCC investigations, ASX queries, compliance issues, or governance concerns? Include any enforceable undertakings or remediation programs.`,
-    
-    // Strategy Consultants & Transformation (key for strategy firms)
     `Has ${company.name} (ASX: ${company.ticker}) engaged any strategy consultants for strategic reviews, transformation programs, cost reduction, or performance improvement? Include any announced restructuring or turnaround initiatives.`,
   ];
 
@@ -250,7 +358,6 @@ IMPORTANT:
     const data = await response.json() as any;
     const text = data.content?.[0]?.text || '';
     
-    // Strip markdown code blocks if present
     let cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
     
     const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
@@ -305,7 +412,6 @@ RESTRUCTURING FIRMS:
 - "FTI Consulting", "FTI" → "FTI Consulting"
 - "McGrathNicol", "McGrath Nicol" → "McGrathNicol"
 - "KordaMentha", "Korda Mentha" → "KordaMentha"
-- "Ferrier Hodgson" → "Ferrier Hodgson"
 
 STRATEGY CONSULTANTS:
 - "McKinsey & Company", "McKinsey" → "McKinsey"
@@ -316,14 +422,11 @@ LAW FIRMS:
 - "Gilbert + Tobin", "Gilbert+Tobin", "G+T" → "Gilbert + Tobin"
 - "King & Wood Mallesons", "KWM" → "King & Wood Mallesons"
 - "Allens", "Allens Linklaters" → "Allens"
-- "Herbert Smith Freehills", "HSF" → "Herbert Smith Freehills"
 
 PE FIRMS:
 - "BGH Capital" → "BGH Capital"
 - "KKR", "Kohlberg Kravis Roberts" → "KKR"
 - "TPG", "TPG Capital" → "TPG"
-- "Crescent Capital Partners", "Crescent Capital" → "Crescent Capital"
-- "Adamantem Capital" → "Adamantem Capital"
 
 REGULATORS:
 - "Australian Competition and Consumer Commission", "ACCC" → "ACCC"
@@ -364,13 +467,11 @@ Return ONLY a JSON object mapping every original name to its canonical form. No 
     
     console.log('Resolution response length:', text.length);
     
-    // Strip markdown code blocks if present
     let cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
     
-    // Extract JSON object from response
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('No JSON found in resolution response. First 500 chars:', cleanText.substring(0, 500));
+      console.error('No JSON found in resolution response');
       return new Map(entityNames.map(n => [n, n]));
     }
 
@@ -378,11 +479,6 @@ Return ONLY a JSON object mapping every original name to its canonical form. No 
     const mappingCount = Object.keys(mappings).length;
     console.log(`Resolved ${mappingCount} entity mappings`);
     
-    // Log some example mappings to verify normalization
-    const examples = Object.entries(mappings).slice(0, 5);
-    console.log('Example mappings:', JSON.stringify(examples));
-    
-    // Count how many were actually normalized (different from original)
     const normalizedCount = Object.entries(mappings).filter(([orig, canon]) => orig !== canon).length;
     console.log(`Entities normalized: ${normalizedCount} of ${mappingCount}`);
 
@@ -419,7 +515,7 @@ function mapEntityType(type: string): 'company' | 'person' | 'firm' | 'governmen
 
 function calculateWhoCaresFromRelationships(
   companies: Array<ParsedCompany & { relationships: Relationship[] }>
-) {
+): WhoCares[] {
   const entityMap = new Map<string, Set<string>>();
   const entityDetails = new Map<string, { type: string; category: string }>();
 
@@ -457,6 +553,12 @@ function createFallbackOutput(companies: ParsedCompany[]) {
   return {
     companies: companies.map(c => ({ ...c, relationships: [], processing_status: 'completed' as const })),
     who_cares: [],
+    narrative_summary: {
+      headline: "Analysis could not be completed",
+      key_findings: ["API key not configured"],
+      suggested_approaches: [],
+      disclaimer: "Signal6 provides indicative insights, not predictive claims."
+    },
     processing_stats: {
       total_companies: companies.length,
       total_relationships: 0,
