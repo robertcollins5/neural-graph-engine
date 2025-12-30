@@ -12,6 +12,13 @@ interface Relationship {
   entity_type: 'company' | 'person' | 'firm';
   category: string;
   details: string;
+  source_url?: string;
+}
+
+interface SearchResult {
+  title: string;
+  snippet: string;
+  link: string;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -26,14 +33,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Companies array is required' });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const claudeApiKey = process.env.ANTHROPIC_API_KEY;
+    const serpApiKey = process.env.SERPAPI_KEY;
 
-    if (!apiKey) {
-      console.warn('Claude API key not configured, using fallback');
+    // Use hybrid approach if SerpAPI available, otherwise Claude-only
+    let companiesWithRelationships;
+    
+    if (serpApiKey && claudeApiKey) {
+      console.log('Using hybrid SerpAPI + Claude discovery');
+      companiesWithRelationships = await discoverBatchHybrid(companies, serpApiKey, claudeApiKey);
+    } else if (claudeApiKey) {
+      console.log('Using Claude-only discovery');
+      companiesWithRelationships = await discoverBatchWithClaude(companies, claudeApiKey);
+    } else {
+      console.warn('No API keys configured, using fallback');
       return res.json(createFallbackBatchOutput(companies));
     }
 
-    const companiesWithRelationships = await discoverBatchWithClaude(companies, apiKey);
     const whoCares = calculateWhoCaresFromRelationships(companiesWithRelationships);
 
     const companiesWithStatus = companiesWithRelationships.map(c => ({
@@ -51,8 +67,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           0
         ),
         multi_exposure_entities: whoCares.length,
-        api_calls_used: companies.length,
+        api_calls_used: companies.length * 5,
         processing_time_ms: Date.now(),
+        search_mode: serpApiKey ? 'hybrid_web_search' : 'claude_only',
       },
     });
   } catch (error) {
@@ -61,73 +78,128 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-async function callClaude(prompt: string, apiKey: string): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+// ============ HYBRID DISCOVERY (SerpAPI + Claude) ============
+
+async function discoverBatchHybrid(
+  companies: ParsedCompany[],
+  serpApiKey: string,
+  claudeApiKey: string
+): Promise<Array<ParsedCompany & { relationships: Relationship[] }>> {
+  const results = await Promise.all(
+    companies.map(async (company) => {
+      // Step 1: Get real search results from SerpAPI
+      const searchData = await gatherSearchData(company, serpApiKey);
+      
+      // Step 2: Use Claude to analyse and extract relationships
+      const relationships = await analyseWithClaude(company, searchData, claudeApiKey);
+      
+      return {
+        ...company,
+        relationships,
+        processing_status: 'completed' as const,
+      };
+    })
+  );
+  return results;
+}
+
+async function gatherSearchData(company: ParsedCompany, serpApiKey: string): Promise<string> {
+  const searchQueries = [
+    `${company.ticker} ASX shareholders registry`,
+    `${company.ticker} ${company.name} board directors executives`,
+    `${company.ticker} ${company.name} auditor`,
+    `${company.ticker} ${company.name} broker analyst coverage`,
+    `${company.ticker} ${company.name} news announcements 2024 2025`,
+  ];
+
+  let allResults = '';
+
+  for (const query of searchQueries) {
+    try {
+      const results = await searchWithSerpApi(query, serpApiKey);
+      for (const result of results.slice(0, 5)) {
+        allResults += `\n\nSource: ${result.link}\nTitle: ${result.title}\nSnippet: ${result.snippet}`;
+      }
+    } catch (error) {
+      console.error(`Search error for query "${query}":`, error);
+    }
+  }
+
+  return allResults;
+}
+
+async function searchWithSerpApi(query: string, apiKey: string): Promise<SearchResult[]> {
+  const params = new URLSearchParams({
+    q: query,
+    api_key: apiKey,
+    engine: 'google',
+    num: '10',
   });
 
+  const response = await fetch(`https://serpapi.com/search?${params}`);
+
   if (!response.ok) {
-    const error = await response.text();
-    console.error(`Claude API error: ${response.status}`, error);
-    return '';
+    throw new Error(`SerpApi error: ${response.status}`);
   }
 
   const data = await response.json() as any;
-  const textContent = data.content.find((c: any) => c.type === 'text');
-  return textContent?.text || '';
+  return (data.organic_results || []).map((r: any) => ({
+    title: r.title || '',
+    snippet: r.snippet || '',
+    link: r.link || '',
+  }));
 }
 
-async function discoverRelationshipsWithClaude(
+async function analyseWithClaude(
   company: ParsedCompany,
+  searchData: string,
   apiKey: string
 ): Promise<Relationship[]> {
-  const prompt = `You are an expert financial analyst. Research and discover all relationships for the company "${company.name}" (ticker: ${company.ticker}).
+  const prompt = `You are an expert financial analyst. Based on the following REAL web search results about "${company.name}" (ASX: ${company.ticker}), extract all relationships.
 
-Find and list:
-1. Major shareholders (>2% holdings)
-2. Board members and executives
-3. Auditors and financial advisors
-4. Brokers and underwriters
-5. Industry competitors
-6. PE firms or investment groups with interest
-7. Suppliers and major customers
+SEARCH RESULTS:
+${searchData}
 
-For each entity found, provide:
-- Entity name
-- Relationship type (shareholder/executive/auditor/broker/advisor/competitor/pe_firm/supplier/customer)
-- Brief details (e.g., "8.2% shareholder" or "CEO departed June 2025")
+Extract and list ALL entities mentioned:
+1. Shareholders (with percentages if mentioned)
+2. Board members and executives (with roles)
+3. Auditors
+4. Brokers and advisors
+5. Competitors
+6. Any other relevant entities
 
-Format your response as a JSON array with objects containing: name, type, details
-
-Example format:
+Format your response as a JSON array:
 [
-  {"name": "BDO Australia", "type": "auditor", "details": "External auditor"},
-  {"name": "Soul Pattinson", "type": "shareholder", "details": "9.7% shareholder, withdrew takeover bid"}
+  {"name": "Entity Name", "type": "shareholder|executive|auditor|broker|advisor|competitor|director", "details": "specific details from the search results"}
 ]
 
-Be thorough and find as many real relationships as possible. Focus on high-quality, verified information.`;
+IMPORTANT: Only include entities actually mentioned in the search results. Include specific details like percentages, roles, or dates found in the results.`;
 
   try {
-    const response = await callClaude(prompt, apiKey);
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
 
-    if (!response) {
+    if (!response.ok) {
+      console.error(`Claude API error: ${response.status}`);
       return [];
     }
 
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      return [];
-    }
+    const data = await response.json() as any;
+    const text = data.content?.[0]?.text || '';
+    
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
 
     const entities = JSON.parse(jsonMatch[0]) as Array<{
       name: string;
@@ -142,28 +214,12 @@ Be thorough and find as many real relationships as possible. Focus on high-quali
       details: entity.details,
     }));
   } catch (error) {
-    console.error(`Error discovering relationships for ${company.ticker}:`, error);
+    console.error(`Claude analysis error for ${company.ticker}:`, error);
     return [];
   }
 }
 
-function mapEntityType(type: string): 'company' | 'person' | 'firm' {
-  const typeMap: Record<string, 'company' | 'person' | 'firm'> = {
-    shareholder: 'company',
-    executive: 'person',
-    auditor: 'firm',
-    broker: 'firm',
-    advisor: 'firm',
-    competitor: 'company',
-    pe_firm: 'company',
-    supplier: 'company',
-    customer: 'company',
-    director: 'person',
-    ceo: 'person',
-    cfo: 'person',
-  };
-  return typeMap[type.toLowerCase()] || 'firm';
-}
+// ============ CLAUDE-ONLY DISCOVERY (fallback) ============
 
 async function discoverBatchWithClaude(
   companies: ParsedCompany[],
@@ -180,6 +236,80 @@ async function discoverBatchWithClaude(
     })
   );
   return results;
+}
+
+async function discoverRelationshipsWithClaude(
+  company: ParsedCompany,
+  apiKey: string
+): Promise<Relationship[]> {
+  const prompt = `You are an expert financial analyst. Research and discover all relationships for the company "${company.name}" (ticker: ${company.ticker}).
+
+Find and list:
+1. Major shareholders (>2% holdings)
+2. Board members and executives
+3. Auditors and financial advisors
+4. Brokers and underwriters
+5. Industry competitors
+6. PE firms or investment groups with interest
+
+Format your response as a JSON array:
+[
+  {"name": "BDO Australia", "type": "auditor", "details": "External auditor"},
+  {"name": "Soul Pattinson", "type": "shareholder", "details": "9.7% shareholder"}
+]`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!response.ok) return [];
+
+    const data = await response.json() as any;
+    const text = data.content?.[0]?.text || '';
+    
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+
+    const entities = JSON.parse(jsonMatch[0]);
+    return entities.map((entity: any) => ({
+      entity_name: entity.name,
+      entity_type: mapEntityType(entity.type),
+      category: entity.type,
+      details: entity.details,
+    }));
+  } catch (error) {
+    console.error(`Claude error for ${company.ticker}:`, error);
+    return [];
+  }
+}
+
+// ============ UTILITIES ============
+
+function mapEntityType(type: string): 'company' | 'person' | 'firm' {
+  const typeMap: Record<string, 'company' | 'person' | 'firm'> = {
+    shareholder: 'company',
+    executive: 'person',
+    auditor: 'firm',
+    broker: 'firm',
+    advisor: 'firm',
+    competitor: 'company',
+    pe_firm: 'company',
+    director: 'person',
+    ceo: 'person',
+    cfo: 'person',
+  };
+  return typeMap[type.toLowerCase()] || 'firm';
 }
 
 function calculateWhoCaresFromRelationships(
@@ -221,61 +351,22 @@ function calculateWhoCaresFromRelationships(
 }
 
 function createFallbackBatchOutput(companies: ParsedCompany[]) {
-  const mockRelationships: Record<string, Relationship[]> = {
-    TER: [
-      { entity_name: 'BDO Australia', entity_type: 'firm', category: 'auditor', details: 'External auditor' },
-      { entity_name: 'Sprott Asset Management', entity_type: 'company', category: 'shareholder', details: '8.2% shareholding' },
-    ],
-    MVF: [
-      { entity_name: 'BDO Australia', entity_type: 'firm', category: 'auditor', details: 'External auditor' },
-      { entity_name: 'Sprott Asset Management', entity_type: 'company', category: 'shareholder', details: '6.5% shareholding' },
-    ],
-  };
-
   const companiesWithRelationships = companies.map((c) => ({
     ...c,
-    relationships: mockRelationships[c.ticker] || [],
+    relationships: [],
     processing_status: 'completed' as const,
   }));
 
-  const entityMap = new Map<string, Set<string>>();
-  for (const company of companiesWithRelationships) {
-    for (const rel of company.relationships) {
-      if (!entityMap.has(rel.entity_name)) {
-        entityMap.set(rel.entity_name, new Set());
-      }
-      entityMap.get(rel.entity_name)!.add(company.ticker);
-    }
-  }
-
-  const whoCares = Array.from(entityMap.entries())
-    .filter(([_, tickers]) => tickers.size >= 2)
-    .map(([name, tickers]) => {
-      const rel = companiesWithRelationships
-        .flatMap((c) => c.relationships)
-        .find((r) => r.entity_name === name)!;
-      return {
-        entity_name: name,
-        entity_type: rel.entity_type,
-        category: rel.category,
-        exposure_count: tickers.size,
-        exposed_companies: Array.from(tickers),
-        exposure_details: Array.from(tickers).map((ticker) => ({
-          ticker,
-          relationship_type: rel.category,
-        })),
-      };
-    });
-
   return {
     companies: companiesWithRelationships,
-    who_cares: whoCares,
+    who_cares: [],
     processing_stats: {
       total_companies: companies.length,
-      total_relationships: companiesWithRelationships.reduce((sum, c) => sum + c.relationships.length, 0),
-      multi_exposure_entities: whoCares.length,
+      total_relationships: 0,
+      multi_exposure_entities: 0,
       api_calls_used: 0,
-      processing_time_ms: 1000,
+      processing_time_ms: 0,
+      search_mode: 'fallback',
     },
   };
 }
