@@ -115,11 +115,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 // ============ PERPLEXITY RESEARCH ============
 
 async function researchWithPerplexity(company: ParsedCompany, apiKey: string): Promise<string> {
+  // Expanded queries targeting exec recruiters, strategy, compliance, restructuring firms
   const queries = [
-    `Who are the top 10 substantial shareholders of ${company.name} (ASX: ${company.ticker})? Include percentage holdings.`,
-    `Who are all board directors and executives of ${company.name} (ASX: ${company.ticker})? Include Chairman, CEO, CFO, all non-executive directors with roles.`,
-    `Who is the external auditor for ${company.name} (ASX: ${company.ticker})? Also list legal advisors, M&A advisors, corporate brokers, and share registry.`,
-    `Who are the main ASX-listed competitors of ${company.name} (${company.ticker})? Also list any private equity firms interested in this sector.`,
+    // Shareholders & Ownership
+    `Who are the top 10 substantial shareholders of ${company.name} (ASX: ${company.ticker})? Include percentage holdings, institutional investors, private equity firms, and activist shareholders.`,
+    
+    // Board & Executives (key for exec recruiters)
+    `Who are all board directors and executives of ${company.name} (ASX: ${company.ticker})? Include Chairman, CEO, CFO, all non-executive directors with their roles. Note any recent departures, appointments, or upcoming retirements.`,
+    
+    // Auditors & Professional Advisors (key for Big 4)
+    `Who are the professional advisors of ${company.name} (ASX: ${company.ticker})? Include external auditor, legal counsel, M&A advisors, corporate brokers, share registry, and any restructuring or turnaround advisors.`,
+    
+    // Competitors & PE Interest
+    `Who are the main ASX-listed competitors of ${company.name} (${company.ticker})? Also list any private equity firms that have shown acquisition interest in this company or sector, including failed bids.`,
+    
+    // Lenders & Financial Stress (key for restructuring)
+    `Who are the lenders and debt providers to ${company.name} (ASX: ${company.ticker})? Include any debt facilities, covenant issues, refinancing activity, or financial stress indicators.`,
+    
+    // Regulatory & Compliance (key for compliance advisors)
+    `Has ${company.name} (ASX: ${company.ticker}) faced any regulatory scrutiny, ASIC or ACCC investigations, ASX queries, compliance issues, or governance concerns? Include any enforceable undertakings or remediation programs.`,
+    
+    // Strategy Consultants & Transformation (key for strategy firms)
+    `Has ${company.name} (ASX: ${company.ticker}) engaged any strategy consultants for strategic reviews, transformation programs, cost reduction, or performance improvement? Include any announced restructuring or turnaround initiatives.`,
   ];
 
   let allResults = '';
@@ -137,7 +154,7 @@ async function researchWithPerplexity(company: ParsedCompany, apiKey: string): P
           messages: [
             {
               role: 'system',
-              content: 'You are a financial research assistant. Provide accurate, specific information about ASX companies including names, percentages, and roles. Always include the external auditor.'
+              content: 'You are a financial research assistant specializing in ASX-listed companies. Provide accurate, specific information including names of firms and individuals, percentages, roles, and dates. Include any professional advisors, consultants, or restructuring firms involved.'
             },
             { role: 'user', content: query }
           ],
@@ -173,25 +190,42 @@ async function extractRawEntities(
 RESEARCH:
 ${research || 'No external research available - use your knowledge.'}
 
-Extract entities into categories:
-- shareholder (with % if known)
-- director (with role: Chairman, Non-Executive Director, etc.)
-- executive (CEO, CFO, COO, Company Secretary)
-- auditor
-- broker
-- advisor (legal, M&A, financial)
-- competitor
-- pe_firm (private equity)
-- government (regulators: ACCC, ASIC, etc.)
+Extract entities into these categories (important for executive recruiters, strategy consultants, and restructuring advisors):
+
+OWNERSHIP & GOVERNANCE:
+- shareholder (with % if known - especially PE firms, activists, institutions)
+- director (Chairman, Non-Executive Directors - note multiple board seats)
+- executive (CEO, CFO, COO, Company Secretary - note departures/appointments)
+
+PROFESSIONAL ADVISORS:
+- auditor (external audit firm)
+- legal_advisor (law firms acting for the company)
+- ma_advisor (M&A advisory, corporate finance)
+- broker (corporate broker, research coverage)
+- restructuring_advisor (turnaround, insolvency specialists like FTI, McGrathNicol, KordaMentha)
+- strategy_consultant (McKinsey, KPMG, Bain, BCG, LEK, SPP, Nous)
+
+FINANCIAL RELATIONSHIPS:
+- lender (banks with debt exposure, syndicate members)
+- pe_firm (private equity with ownership or acquisition interest)
+
+MARKET CONTEXT:
+- competitor (ASX-listed and private competitors)
+- customer (major B2B customers)
+- supplier (key suppliers)
+
+REGULATORY:
+- government (ACCC, ASIC, ASX, APRA, ATO - especially if investigating)
 - registry (share registry)
-- lender
-- supplier
-- customer
 
 Return ONLY a JSON array with no markdown formatting:
-[{"name": "Full Entity Name", "type": "category", "details": "specific details"}]
+[{"name": "Full Entity Name", "type": "category", "details": "specific details including roles, percentages, dates, nature of engagement"}]
 
-IMPORTANT: Include the external auditor. Do not wrap response in code blocks.`;
+IMPORTANT: 
+- Include ALL professional advisors mentioned (auditors, lawyers, consultants, restructuring firms)
+- Note any regulatory investigations or compliance issues
+- Include lenders and debt providers
+- Flag any PE firms with acquisition interest`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -250,17 +284,57 @@ ${entityNames.map((name, i) => `${i + 1}. ${name}`).join('\n')}
 Your task: Identify which entities are THE SAME and assign a single canonical name.
 
 Matching rules:
+
+AUDIT FIRMS:
 - "Ernst & Young (EY)", "EY", "Ernst & Young Australia" → "Ernst & Young"
+- "PricewaterhouseCoopers", "PwC", "PwC Australia" → "PwC"
+- "KPMG Australia", "KPMG" → "KPMG"
+- "Deloitte Touche Tohmatsu", "Deloitte" → "Deloitte"
+
+ASSET MANAGERS:
 - "BlackRock Group", "BlackRock, Inc." → "BlackRock"
 - "State Street Corporation and subsidiaries", "State Street" → "State Street"
 - "Vanguard funds", "The Vanguard Group" → "Vanguard"
-- "Macquarie Group Limited", "Macquarie Capital" → "Macquarie"
-- "HSBC Custody Nominees (Australia) Limited" → "HSBC Custody Nominees"
-- "Sonic Healthcare Ltd (ASX: SHL)" → "Sonic Healthcare"
-- "Australian Competition and Consumer Commission" → "ACCC"
+
+BANKS/BROKERS:
+- "Macquarie Group Limited", "Macquarie Capital", "Macquarie Bank" → "Macquarie"
+- "Goldman Sachs Australia", "Goldman Sachs" → "Goldman Sachs"
+- "UBS Australia", "UBS AG" → "UBS"
+
+RESTRUCTURING FIRMS:
+- "FTI Consulting", "FTI" → "FTI Consulting"
+- "McGrathNicol", "McGrath Nicol" → "McGrathNicol"
+- "KordaMentha", "Korda Mentha" → "KordaMentha"
+- "Ferrier Hodgson" → "Ferrier Hodgson"
+
+STRATEGY CONSULTANTS:
+- "McKinsey & Company", "McKinsey" → "McKinsey"
+- "Boston Consulting Group", "BCG" → "BCG"
+- "Bain & Company", "Bain" → "Bain"
+
+LAW FIRMS:
+- "Gilbert + Tobin", "Gilbert+Tobin", "G+T" → "Gilbert + Tobin"
+- "King & Wood Mallesons", "KWM" → "King & Wood Mallesons"
+- "Allens", "Allens Linklaters" → "Allens"
+- "Herbert Smith Freehills", "HSF" → "Herbert Smith Freehills"
+
+PE FIRMS:
+- "BGH Capital" → "BGH Capital"
+- "KKR", "Kohlberg Kravis Roberts" → "KKR"
+- "TPG", "TPG Capital" → "TPG"
+- "Crescent Capital Partners", "Crescent Capital" → "Crescent Capital"
+- "Adamantem Capital" → "Adamantem Capital"
+
+REGULATORS:
+- "Australian Competition and Consumer Commission", "ACCC" → "ACCC"
+- "Australian Securities and Investments Commission", "ASIC" → "ASIC"
+- "Australian Securities Exchange", "ASX" → "ASX"
+- "Australian Prudential Regulation Authority", "APRA" → "APRA"
+
+GENERAL RULES:
 - Remove suffixes: Ltd, Limited, Pty, Inc, Corporation, Group, Australia
-- Government bodies use acronyms: ASIC, ACCC, ASX, ATO, APRA
 - People: normalize variations like "Kate (Kathryn) McKenzie" → "Kate McKenzie"
+- Healthcare companies: "Sonic Healthcare Ltd (ASX: SHL)" → "Sonic Healthcare"
 
 Return ONLY a JSON object mapping every original name to its canonical form. No markdown, no explanation:
 {"original name": "canonical name", ...}`;
@@ -327,15 +401,18 @@ function mapEntityType(type: string): 'company' | 'person' | 'firm' | 'governmen
     director: 'person',
     executive: 'person',
     auditor: 'firm',
+    legal_advisor: 'firm',
+    ma_advisor: 'firm',
     broker: 'firm',
-    advisor: 'firm',
-    competitor: 'company',
-    pe_firm: 'company',
+    restructuring_advisor: 'firm',
+    strategy_consultant: 'firm',
     lender: 'firm',
+    pe_firm: 'company',
+    competitor: 'company',
+    customer: 'company',
+    supplier: 'company',
     government: 'government',
     registry: 'firm',
-    supplier: 'company',
-    customer: 'company',
   };
   return typeMap[type?.toLowerCase()] || 'firm';
 }
