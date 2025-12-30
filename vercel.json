@@ -1,0 +1,34 @@
+{
+  "name": "neural-graph-engine",
+  "version": 2,
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "dist",
+  "public": false,
+  "env": {
+    "ANTHROPIC_API_KEY": {
+      "description": "Anthropic Claude API key for company extraction and relationship discovery"
+    },
+    "GOOGLE_SEARCH_API_KEY": {
+      "description": "Google Custom Search API key for relationship discovery"
+    },
+    "GOOGLE_SEARCH_ENGINE_ID": {
+      "description": "Google Custom Search Engine ID"
+    }
+  },
+  "functions": {
+    "server/index.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "server/index.ts"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "server/index.ts"
+    }
+  ]
+}
