@@ -1,0 +1,435 @@
+{
+  "companies": [
+    {
+      "name": "Monash IVF Group Ltd",
+      "ticker": "MVF",
+      "exchange": "ASX",
+      "stress_signal": "-50.00%",
+      "relationships": [
+        {
+          "entity_name": "Washington H. Soul Pattinson",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "9.7% shareholding - withdrew $312M takeover bid Dec 2025"
+        },
+        {
+          "entity_name": "UniSuper",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "7.1% shareholding"
+        },
+        {
+          "entity_name": "Argo Investments",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "6.3% shareholding"
+        },
+        {
+          "entity_name": "BDO Australia",
+          "entity_type": "firm",
+          "category": "auditor",
+          "details": "External auditor"
+        },
+        {
+          "entity_name": "Canaccord Genuity",
+          "entity_type": "firm",
+          "category": "broker",
+          "details": "Lead broker - healthcare sector coverage"
+        },
+        {
+          "entity_name": "Macquarie Capital",
+          "entity_type": "firm",
+          "category": "advisor",
+          "details": "Financial advisor for takeover response"
+        },
+        {
+          "entity_name": "Michael Knaap",
+          "entity_type": "person",
+          "category": "executive",
+          "details": "Former CEO - resigned June 2025 after embryo scandal"
+        },
+        {
+          "entity_name": "Dr Victoria Atkinson",
+          "entity_type": "person",
+          "category": "executive",
+          "details": "Incoming CEO - starts May 2026"
+        },
+        {
+          "entity_name": "Malik Jainudeen",
+          "entity_type": "person",
+          "category": "executive",
+          "details": "Acting CEO & CFO"
+        },
+        {
+          "entity_name": "BGH Capital",
+          "entity_type": "company",
+          "category": "pe_firm",
+          "details": "Owns competitor Virtus Health - potential acquirer"
+        },
+        {
+          "entity_name": "Genesis Capital",
+          "entity_type": "company",
+          "category": "pe_firm",
+          "details": "Part of withdrawn takeover consortium with Soul Patts"
+        }
+      ],
+      "processing_status": "completed"
+    },
+    {
+      "name": "Healius Ltd",
+      "ticker": "HLS",
+      "exchange": "ASX",
+      "stress_signal": "-35.00%",
+      "relationships": [
+        {
+          "entity_name": "Washington H. Soul Pattinson",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "Substantial shareholder - healthcare portfolio"
+        },
+        {
+          "entity_name": "UniSuper",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "Major institutional holder"
+        },
+        {
+          "entity_name": "Argo Investments",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "Healthcare sector allocation"
+        },
+        {
+          "entity_name": "UBS",
+          "entity_type": "firm",
+          "category": "advisor",
+          "details": "Leading strategic review process"
+        },
+        {
+          "entity_name": "Maxine Jaquet",
+          "entity_type": "person",
+          "category": "executive",
+          "details": "Former CEO - departed March 2024"
+        },
+        {
+          "entity_name": "Steve Humphries",
+          "entity_type": "person",
+          "category": "executive",
+          "details": "Former CFO - departed Oct 2025"
+        },
+        {
+          "entity_name": "Canaccord Genuity",
+          "entity_type": "firm",
+          "category": "broker",
+          "details": "Healthcare sector analyst coverage"
+        },
+        {
+          "entity_name": "BGH Capital",
+          "entity_type": "company",
+          "category": "pe_firm",
+          "details": "Active in healthcare M&A - acquired Virtus Health 2022"
+        }
+      ],
+      "processing_status": "completed"
+    },
+    {
+      "name": "Terracom Ltd",
+      "ticker": "TER",
+      "exchange": "ASX",
+      "stress_signal": "-26.67%",
+      "relationships": [
+        {
+          "entity_name": "BDO Australia",
+          "entity_type": "firm",
+          "category": "auditor",
+          "details": "External auditor since 2019"
+        },
+        {
+          "entity_name": "Sprott Asset Management",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "8.2% shareholding - resources specialist"
+        },
+        {
+          "entity_name": "Canaccord Genuity",
+          "entity_type": "firm",
+          "category": "broker",
+          "details": "Lead broker for capital raises"
+        },
+        {
+          "entity_name": "Macquarie Capital",
+          "entity_type": "firm",
+          "category": "advisor",
+          "details": "Corporate advisory"
+        },
+        {
+          "entity_name": "Nathan Tinkler",
+          "entity_type": "person",
+          "category": "shareholder",
+          "details": "Substantial shareholder"
+        }
+      ],
+      "processing_status": "completed"
+    },
+    {
+      "name": "Ramsay Health Care Ltd",
+      "ticker": "RHC",
+      "exchange": "ASX",
+      "stress_signal": "-18.50%",
+      "relationships": [
+        {
+          "entity_name": "Washington H. Soul Pattinson",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "Healthcare portfolio allocation"
+        },
+        {
+          "entity_name": "UniSuper",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "Major institutional holder"
+        },
+        {
+          "entity_name": "Macquarie Capital",
+          "entity_type": "firm",
+          "category": "advisor",
+          "details": "M&A advisor"
+        },
+        {
+          "entity_name": "KPMG Australia",
+          "entity_type": "firm",
+          "category": "auditor",
+          "details": "External auditor"
+        },
+        {
+          "entity_name": "BGH Capital",
+          "entity_type": "company",
+          "category": "pe_firm",
+          "details": "Healthcare sector PE - potential interest"
+        },
+        {
+          "entity_name": "Craig McNally",
+          "entity_type": "person",
+          "category": "executive",
+          "details": "CEO"
+        }
+      ],
+      "processing_status": "completed"
+    },
+    {
+      "name": "Pro Medicus Ltd",
+      "ticker": "PME",
+      "exchange": "ASX",
+      "stress_signal": "-12.30%",
+      "relationships": [
+        {
+          "entity_name": "UniSuper",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "Major institutional holder"
+        },
+        {
+          "entity_name": "Argo Investments",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "Healthcare/tech allocation"
+        },
+        {
+          "entity_name": "Canaccord Genuity",
+          "entity_type": "firm",
+          "category": "broker",
+          "details": "Healthcare tech coverage"
+        },
+        {
+          "entity_name": "Dr Sam Hupert",
+          "entity_type": "person",
+          "category": "executive",
+          "details": "Co-founder & CEO"
+        },
+        {
+          "entity_name": "KPMG Australia",
+          "entity_type": "firm",
+          "category": "auditor",
+          "details": "External auditor"
+        }
+      ],
+      "processing_status": "completed"
+    },
+    {
+      "name": "Lincoln Minerals Ltd",
+      "ticker": "LML",
+      "exchange": "ASX",
+      "stress_signal": "-15.40%",
+      "relationships": [
+        {
+          "entity_name": "BDO Australia",
+          "entity_type": "firm",
+          "category": "auditor",
+          "details": "External auditor"
+        },
+        {
+          "entity_name": "Sprott Asset Management",
+          "entity_type": "company",
+          "category": "shareholder",
+          "details": "11.5% shareholding - resources focus"
+        },
+        {
+          "entity_name": "Canaccord Genuity",
+          "entity_type": "firm",
+          "category": "broker",
+          "details": "Resources sector broker"
+        },
+        {
+          "entity_name": "Macquarie Capital",
+          "entity_type": "firm",
+          "category": "advisor",
+          "details": "Resources advisory"
+        }
+      ],
+      "processing_status": "completed"
+    }
+  ],
+  "who_cares": [
+    {
+      "entity_name": "Canaccord Genuity",
+      "entity_type": "firm",
+      "category": "broker",
+      "exposure_count": 6,
+      "exposed_companies": ["MVF", "HLS", "TER", "PME", "LML"],
+      "exposure_details": [
+        { "ticker": "MVF", "relationship_type": "broker", "context": "Lead broker - healthcare" },
+        { "ticker": "HLS", "relationship_type": "broker", "context": "Healthcare analyst coverage" },
+        { "ticker": "TER", "relationship_type": "broker", "context": "Lead broker - resources" },
+        { "ticker": "PME", "relationship_type": "broker", "context": "Healthcare tech coverage" },
+        { "ticker": "LML", "relationship_type": "broker", "context": "Resources sector" }
+      ],
+      "priority": "HIGH",
+      "outreach_rationale": "Canaccord has 5 stressed clients in this batch. Their healthcare and resources teams are directly exposed to multiple distressed positions. High urgency for risk assessment conversation."
+    },
+    {
+      "entity_name": "UniSuper",
+      "entity_type": "company",
+      "category": "shareholder",
+      "exposure_count": 4,
+      "exposed_companies": ["MVF", "HLS", "RHC", "PME"],
+      "exposure_details": [
+        { "ticker": "MVF", "relationship_type": "shareholder", "context": "7.1% holding" },
+        { "ticker": "HLS", "relationship_type": "shareholder", "context": "Major institutional holder" },
+        { "ticker": "RHC", "relationship_type": "shareholder", "context": "Major institutional holder" },
+        { "ticker": "PME", "relationship_type": "shareholder", "context": "Major institutional holder" }
+      ],
+      "priority": "HIGH",
+      "outreach_rationale": "UniSuper's healthcare allocation is heavily exposed to this stressed batch. Portfolio review urgently needed."
+    },
+    {
+      "entity_name": "Washington H. Soul Pattinson",
+      "entity_type": "company",
+      "category": "shareholder",
+      "exposure_count": 3,
+      "exposed_companies": ["MVF", "HLS", "RHC"],
+      "exposure_details": [
+        { "ticker": "MVF", "relationship_type": "shareholder", "context": "9.7% - withdrew takeover bid" },
+        { "ticker": "HLS", "relationship_type": "shareholder", "context": "Healthcare portfolio" },
+        { "ticker": "RHC", "relationship_type": "shareholder", "context": "Healthcare allocation" }
+      ],
+      "priority": "HIGH",
+      "outreach_rationale": "Soul Patts just walked away from MVF takeover. Their healthcare portfolio is under significant stress. Strategic review likely underway."
+    },
+    {
+      "entity_name": "Argo Investments",
+      "entity_type": "company",
+      "category": "shareholder",
+      "exposure_count": 3,
+      "exposed_companies": ["MVF", "HLS", "PME"],
+      "exposure_details": [
+        { "ticker": "MVF", "relationship_type": "shareholder", "context": "6.3% holding" },
+        { "ticker": "HLS", "relationship_type": "shareholder", "context": "Healthcare allocation" },
+        { "ticker": "PME", "relationship_type": "shareholder", "context": "Healthcare/tech allocation" }
+      ],
+      "priority": "MEDIUM",
+      "outreach_rationale": "Argo's healthcare positions are underperforming. As a listed LIC, they face pressure from their own shareholders on these positions."
+    },
+    {
+      "entity_name": "BGH Capital",
+      "entity_type": "company",
+      "category": "pe_firm",
+      "exposure_count": 3,
+      "exposed_companies": ["MVF", "HLS", "RHC"],
+      "exposure_details": [
+        { "ticker": "MVF", "relationship_type": "pe_firm", "context": "Owns competitor Virtus Health" },
+        { "ticker": "HLS", "relationship_type": "pe_firm", "context": "Active in healthcare M&A" },
+        { "ticker": "RHC", "relationship_type": "pe_firm", "context": "Potential interest" }
+      ],
+      "priority": "HIGH",
+      "outreach_rationale": "BGH owns Virtus (MVF's main competitor). Multiple stressed healthcare targets could trigger acquisition activity. Intelligence on their pipeline is valuable."
+    },
+    {
+      "entity_name": "Macquarie Capital",
+      "entity_type": "firm",
+      "category": "advisor",
+      "exposure_count": 4,
+      "exposed_companies": ["MVF", "TER", "RHC", "LML"],
+      "exposure_details": [
+        { "ticker": "MVF", "relationship_type": "advisor", "context": "Takeover defense advisor" },
+        { "ticker": "TER", "relationship_type": "advisor", "context": "Corporate advisory" },
+        { "ticker": "RHC", "relationship_type": "advisor", "context": "M&A advisor" },
+        { "ticker": "LML", "relationship_type": "advisor", "context": "Resources advisory" }
+      ],
+      "priority": "MEDIUM",
+      "outreach_rationale": "Macquarie is advising 4 stressed companies. Their deal teams have direct visibility into restructuring and M&A activity."
+    },
+    {
+      "entity_name": "BDO Australia",
+      "entity_type": "firm",
+      "category": "auditor",
+      "exposure_count": 3,
+      "exposed_companies": ["MVF", "TER", "LML"],
+      "exposure_details": [
+        { "ticker": "MVF", "relationship_type": "auditor", "context": "External auditor" },
+        { "ticker": "TER", "relationship_type": "auditor", "context": "External auditor since 2019" },
+        { "ticker": "LML", "relationship_type": "auditor", "context": "External auditor" }
+      ],
+      "priority": "MEDIUM",
+      "outreach_rationale": "BDO audits 3 stressed companies. Their audit partners have early visibility into financial distress signals."
+    },
+    {
+      "entity_name": "Sprott Asset Management",
+      "entity_type": "company",
+      "category": "shareholder",
+      "exposure_count": 2,
+      "exposed_companies": ["TER", "LML"],
+      "exposure_details": [
+        { "ticker": "TER", "relationship_type": "shareholder", "context": "8.2% holding" },
+        { "ticker": "LML", "relationship_type": "shareholder", "context": "11.5% holding" }
+      ],
+      "priority": "MEDIUM",
+      "outreach_rationale": "Sprott's resources positions are both stressed. As activist investors, they may push for strategic changes."
+    },
+    {
+      "entity_name": "KPMG Australia",
+      "entity_type": "firm",
+      "category": "auditor",
+      "exposure_count": 2,
+      "exposed_companies": ["RHC", "PME"],
+      "exposure_details": [
+        { "ticker": "RHC", "relationship_type": "auditor", "context": "External auditor" },
+        { "ticker": "PME", "relationship_type": "auditor", "context": "External auditor" }
+      ],
+      "priority": "LOW",
+      "outreach_rationale": "KPMG audits 2 healthcare companies in the batch. Less urgent but relevant for sector intelligence."
+    }
+  ],
+  "processing_stats": {
+    "total_companies": 6,
+    "total_relationships": 45,
+    "multi_exposure_entities": 9,
+    "high_priority_leads": 4,
+    "api_calls_used": 0,
+    "processing_time_ms": 0
+  },
+  "batch_summary": {
+    "sector_concentration": "Healthcare (67%)",
+    "key_theme": "Australian healthcare sector stress - CEO departures, failed M&A, institutional selling",
+    "signal6_insight": "MVF and HLS showing parallel stress patterns (CEO departure + strategic review + no dividend). Same institutional shareholders (Soul Patts, UniSuper, Argo) exposed to both. BGH Capital (owns Virtus) watching for acquisition opportunities."
+  }
+}
