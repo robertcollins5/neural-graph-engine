@@ -40,7 +40,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     if (serpApiKey && claudeApiKey) {
       console.log('Using hybrid SerpAPI + Claude discovery');
-      companiesWithRelationships = await discoverBatchHybrid(companies, serpApiKey, claudeApiKey);
+      try {
+        companiesWithRelationships = await discoverBatchHybrid(companies, serpApiKey, claudeApiKey);
+        // If hybrid returns no relationships, fall back to Claude-only
+        const totalRels = companiesWithRelationships.reduce((sum, c) => sum + c.relationships.length, 0);
+        if (totalRels === 0) {
+          console.log('Hybrid returned no results, falling back to Claude-only');
+          companiesWithRelationships = await discoverBatchWithClaude(companies, claudeApiKey);
+        }
+      } catch (error) {
+        console.error('Hybrid discovery failed, falling back to Claude-only:', error);
+        companiesWithRelationships = await discoverBatchWithClaude(companies, claudeApiKey);
+      }
     } else if (claudeApiKey) {
       console.log('Using Claude-only discovery');
       companiesWithRelationships = await discoverBatchWithClaude(companies, claudeApiKey);
