@@ -1,20 +1,4 @@
 {
   "buildCommand": "pnpm run build",
-  "outputDirectory": "dist",
-  "functions": {
-    "server/index.ts": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  },
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "server/index.ts"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "server/index.ts"
-    }
-  ]
+  "outputDirectory": "dist"
 }
