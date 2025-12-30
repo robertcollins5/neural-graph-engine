@@ -14,11 +14,26 @@ import { mockParseCompanies, mockDiscoverBatch } from '@/lib/mock-api';
 
 type AppState = 'landing' | 'input' | 'confirmation' | 'analyzing' | 'results';
 
+interface NarrativeSummary {
+  headline: string;
+  key_findings: string[];
+  suggested_approaches: Array<{
+    target: string;
+    angle: string;
+    advisory_type: string;
+  }>;
+  disclaimer: string;
+}
+
+interface ExtendedBatchOutput extends BatchOutput {
+  narrative_summary?: NarrativeSummary;
+}
+
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('landing');
   const [pastedText, setPastedText] = useState('');
   const [companies, setCompanies] = useState<ParsedCompany[]>([]);
-  const [batchOutput, setBatchOutput] = useState<BatchOutput | null>(null);
+  const [batchOutput, setBatchOutput] = useState<ExtendedBatchOutput | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processingProgress, setProcessingProgress] = useState<string>('');
@@ -30,7 +45,7 @@ export default function Home() {
       setError(null);
       setProcessingProgress('Loading demo batch...');
       const response = await fetch('/demo-batch.json');
-      const data: BatchOutput = await response.json();
+      const data: ExtendedBatchOutput = await response.json();
       setBatchOutput(data);
       setAppState('results');
       setProcessingProgress('');
@@ -101,7 +116,7 @@ export default function Home() {
         body: JSON.stringify({ companies }),
       });
 
-      let batchData: BatchOutput;
+      let batchData: ExtendedBatchOutput;
 
       if (!response.ok) {
         // Fall back to mock discovery
@@ -248,14 +263,21 @@ export default function Home() {
                 Paste Alert Text
               </h2>
               <p className="text-muted-foreground">
-                Paste any text containing company names and stock tickers
+                Paste any text containing company names and stock tickers, or pre-processor JSON output
               </p>
             </div>
 
             <textarea
               value={pastedText}
               onChange={(e) => setPastedText(e.target.value)}
-              placeholder="Example: Terracom Ltd (TER) experienced a significant drop of 26.67%..."
+              placeholder={`Example formats:
+
+Plain text:
+Terracom Ltd (TER) experienced a significant drop of 26.67%...
+Healius (HLS) CEO Paul Anderson, strategic review, -35% YTD.
+
+Or JSON from pre-processor:
+[{"entity_name": "ASX", "event_type": "regulatory_penalty", ...}]`}
               className="w-full h-48 p-4 border border-border rounded-lg bg-card text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
 
@@ -319,7 +341,7 @@ export default function Home() {
                     </div>
                   </div>
                   {company.stress_signal && (
-                    <div className="text-sm font-mono text-secondary font-semibold">
+                    <div className="text-sm font-mono text-secondary font-semibold max-w-xs truncate">
                       {company.stress_signal}
                     </div>
                   )}
@@ -437,6 +459,7 @@ export default function Home() {
               <div className="space-y-4">
                 <WhoCaresPanel
                   entities={batchOutput.who_cares}
+                  narrativeSummary={batchOutput.narrative_summary}
                   isLoading={isProcessing}
                 />
               </div>
