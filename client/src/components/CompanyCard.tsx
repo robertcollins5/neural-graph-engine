@@ -40,27 +40,25 @@ export default function CompanyCard({ company }: CompanyCardProps) {
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-6 py-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
+        className="w-full px-6 py-4 flex items-start justify-between hover:bg-muted/50 transition-colors"
       >
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="flex-1">
-            <div className="flex items-baseline gap-2">
-              <h3 className="font-mono font-bold text-lg text-foreground truncate">
-                {company.ticker}
-              </h3>
-              <p className="text-sm text-muted-foreground truncate">
-                {company.name}
-              </p>
-            </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-1">
+            <h3 className="font-mono font-bold text-lg text-foreground">
+              {company.ticker}
+            </h3>
+            <p className="text-sm text-muted-foreground truncate">
+              {company.name}
+            </p>
           </div>
           {company.stress_signal && (
-            <div className="flex items-center gap-1 text-secondary font-mono font-semibold whitespace-nowrap">
-              <TrendingDown className="w-4 h-4" />
-              {company.stress_signal}
+            <div className="flex items-start gap-1 text-secondary font-mono font-semibold text-sm">
+              <TrendingDown className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span className="break-words">{company.stress_signal}</span>
             </div>
           )}
         </div>
-        <div className="ml-2">
+        <div className="ml-4 flex-shrink-0">
           {isLoading && (
             <div className="animate-spin">⏳</div>
           )}
