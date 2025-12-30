@@ -9,7 +9,7 @@ interface ParsedCompany {
 
 interface Relationship {
   entity_name: string;
-  entity_type: 'company' | 'person' | 'firm';
+  entity_type: 'company' | 'person' | 'firm' | 'government';
   category: string;
   details: string;
   source_url?: string;
@@ -35,14 +35,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const claudeApiKey = process.env.ANTHROPIC_API_KEY;
     const serpApiKey = process.env.SERPAPI_KEY;
+    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY;
 
     let companiesWithRelationships;
     
     if (serpApiKey && claudeApiKey) {
-      console.log('Using hybrid SerpAPI + Claude discovery');
+      console.log('Using hybrid search + Claude discovery');
       try {
-        companiesWithRelationships = await discoverBatchHybrid(companies, serpApiKey, claudeApiKey);
-        // If hybrid returns no relationships, fall back to Claude-only
+        companiesWithRelationships = await discoverBatchHybrid(companies, serpApiKey, claudeApiKey, firecrawlApiKey);
         const totalRels = companiesWithRelationships.reduce((sum, c) => sum + c.relationships.length, 0);
         if (totalRels === 0) {
           console.log('Hybrid returned no results, falling back to Claude-only');
@@ -77,9 +77,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           0
         ),
         multi_exposure_entities: whoCares.length,
-        api_calls_used: companies.length * 5,
+        api_calls_used: companies.length * 7,
         processing_time_ms: Date.now(),
         search_mode: serpApiKey ? 'hybrid_web_search' : 'claude_only',
+        firecrawl_enabled: !!firecrawlApiKey,
       },
     });
   } catch (error) {
@@ -88,14 +89,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+// ============ HYBRID DISCOVERY (SerpAPI + Firecrawl + Claude) ============
+
 async function discoverBatchHybrid(
   companies: ParsedCompany[],
   serpApiKey: string,
-  claudeApiKey: string
+  claudeApiKey: string,
+  firecrawlApiKey?: string
 ): Promise<Array<ParsedCompany & { relationships: Relationship[] }>> {
   const results = await Promise.all(
     companies.map(async (company) => {
-      const searchData = await gatherSearchData(company, serpApiKey);
+      const searchData = await gatherSearchData(company, serpApiKey, firecrawlApiKey);
       const relationships = await analyseWithClaude(company, searchData, claudeApiKey);
       
       return {
@@ -108,29 +112,89 @@ async function discoverBatchHybrid(
   return results;
 }
 
-async function gatherSearchData(company: ParsedCompany, serpApiKey: string): Promise<string> {
+async function gatherSearchData(
+  company: ParsedCompany, 
+  serpApiKey: string,
+  firecrawlApiKey?: string
+): Promise<string> {
+  // Expanded WHO ELSE search queries
   const searchQueries = [
-    `${company.ticker} ASX shareholders registry`,
-    `${company.ticker} ${company.name} board directors executives`,
-    `${company.ticker} ${company.name} auditor`,
-    `${company.ticker} ${company.name} broker analyst coverage`,
-    `${company.ticker} ${company.name} news announcements 2024 2025`,
+    // Shareholders & Ownership
+    `"${company.ticker}" ASX substantial shareholders top 20 holders`,
+    `"${company.name}" institutional investors Vanguard BlackRock State Street UniSuper`,
+    
+    // Board & Executives
+    `"${company.name}" board of directors 2024 2025`,
+    `"${company.name}" CEO CFO executive management team appointments`,
+    `"${company.ticker}" director resignation appointment ASX announcement`,
+    
+    // Financial relationships
+    `"${company.name}" auditor annual report 2024`,
+    `"${company.ticker}" broker analyst coverage UBS Macquarie Goldman Citi`,
+    `"${company.name}" lenders debt facility banking syndicate`,
+    
+    // Competitors & Industry
+    `"${company.name}" competitors industry peers ASX`,
+    `"${company.name}" suppliers customers B2B partners`,
+    
+    // Regulatory & Government
+    `"${company.name}" ASIC ACCC regulatory government inquiry`,
+    
+    // M&A & PE interest
+    `"${company.name}" private equity takeover acquisition interest`,
   ];
 
   let allResults = '';
+  const urlsToScrape: string[] = [];
 
+  // First pass: Get search results
   for (const query of searchQueries) {
     try {
       const results = await searchWithSerpApi(query, serpApiKey);
-      for (const result of results.slice(0, 5)) {
+      for (const result of results.slice(0, 3)) {
         allResults += `\n\nSource: ${result.link}\nTitle: ${result.title}\nSnippet: ${result.snippet}`;
+        
+        // Collect high-value URLs for deep scraping
+        if (firecrawlApiKey && isHighValueUrl(result.link)) {
+          urlsToScrape.push(result.link);
+        }
       }
     } catch (error) {
       console.error(`Search error for query "${query}":`, error);
     }
   }
 
+  // Second pass: Deep scrape high-value pages with Firecrawl
+  if (firecrawlApiKey && urlsToScrape.length > 0) {
+    const uniqueUrls = [...new Set(urlsToScrape)].slice(0, 5); // Max 5 pages
+    for (const url of uniqueUrls) {
+      try {
+        const pageContent = await scrapeWithFirecrawl(url, firecrawlApiKey);
+        if (pageContent) {
+          allResults += `\n\n=== FULL PAGE CONTENT ===\nSource: ${url}\n${pageContent.slice(0, 3000)}`;
+        }
+      } catch (error) {
+        console.error(`Firecrawl error for ${url}:`, error);
+      }
+    }
+  }
+
   return allResults;
+}
+
+function isHighValueUrl(url: string): boolean {
+  const highValueDomains = [
+    'asx.com.au',
+    'afr.com',
+    'theaustralian.com.au',
+    'smh.com.au',
+    'reuters.com',
+    'bloomberg.com',
+    'companiesmarketcap.com',
+    'marketindex.com.au',
+    'intelligentinvestor.com.au',
+  ];
+  return highValueDomains.some(domain => url.includes(domain));
 }
 
 async function searchWithSerpApi(query: string, apiKey: string): Promise<SearchResult[]> {
@@ -139,6 +203,7 @@ async function searchWithSerpApi(query: string, apiKey: string): Promise<SearchR
     api_key: apiKey,
     engine: 'google',
     num: '10',
+    gl: 'au', // Australia focus
   });
 
   const response = await fetch(`https://serpapi.com/search?${params}`);
@@ -155,30 +220,76 @@ async function searchWithSerpApi(query: string, apiKey: string): Promise<SearchR
   }));
 }
 
+async function scrapeWithFirecrawl(url: string, apiKey: string): Promise<string | null> {
+  try {
+    const response = await fetch('https://api.firecrawl.dev/v0/scrape', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        url: url,
+        pageOptions: {
+          onlyMainContent: true,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`Firecrawl error: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json() as any;
+    return data.data?.markdown || data.data?.content || null;
+  } catch (error) {
+    console.error('Firecrawl scrape error:', error);
+    return null;
+  }
+}
+
 async function analyseWithClaude(
   company: ParsedCompany,
   searchData: string,
   apiKey: string
 ): Promise<Relationship[]> {
-  const prompt = `You are an expert financial analyst. Based on the following REAL web search results about "${company.name}" (ASX: ${company.ticker}), extract all relationships.
+  const prompt = `You are an expert financial analyst specializing in corporate relationships and stakeholder mapping. 
+
+Analyze the following web search results about "${company.name}" (ASX: ${company.ticker}) and extract ALL entities that have a relationship with this company.
 
 SEARCH RESULTS:
 ${searchData}
 
-Extract and list ALL entities mentioned:
-1. Shareholders (with percentages if mentioned)
-2. Board members and executives (with roles)
-3. Auditors
-4. Brokers and advisors
-5. Competitors
-6. Any other relevant entities
+Extract entities in these categories:
 
-Format your response as a JSON array:
+WHO ELSE (connected to this company):
+1. SHAREHOLDERS - Major/substantial holders, institutional investors, funds (with % if mentioned)
+2. BOARD - Directors, chairman, non-executive directors (with roles)
+3. EXECUTIVES - CEO, CFO, COO, company secretary (with roles and tenure)
+4. AUDITORS - Audit firms
+5. BROKERS - Research analysts, broking firms with coverage
+6. ADVISORS - Legal counsel, M&A advisors, consultants
+7. LENDERS - Banks, debt providers
+8. COMPETITORS - Industry peers, direct competitors
+9. SUPPLIERS - B2B suppliers, service providers
+10. CUSTOMERS - Major B2B customers
+11. REGISTRIES - Share registries
+12. PE_FIRMS - Private equity firms with interest
+13. GOVERNMENT - Regulators, government bodies (ASIC, ACCC, ATO, Health Dept)
+14. UNIONS - Worker unions, industry associations
+15. INSURERS - D&O insurers, professional indemnity
+
+Format as JSON array:
 [
-  {"name": "Entity Name", "type": "shareholder|executive|auditor|broker|advisor|competitor|director", "details": "specific details from the search results"}
+  {"name": "Entity Name", "type": "shareholder|director|executive|auditor|broker|advisor|lender|competitor|supplier|customer|registry|pe_firm|government|union|insurer", "details": "specific details from search results"}
 ]
 
-IMPORTANT: Only include entities actually mentioned in the search results. Include specific details like percentages, roles, or dates found in the results.`;
+IMPORTANT: 
+- Only include entities ACTUALLY MENTIONED in the search results
+- Include specific details: percentages, roles, dates, amounts
+- Be thorough - extract every entity mentioned
+- For people, include their role/title`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -190,7 +301,7 @@ IMPORTANT: Only include entities actually mentioned in the search results. Inclu
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -224,6 +335,8 @@ IMPORTANT: Only include entities actually mentioned in the search results. Inclu
   }
 }
 
+// ============ CLAUDE-ONLY DISCOVERY (fallback) ============
+
 async function discoverBatchWithClaude(
   companies: ParsedCompany[],
   apiKey: string
@@ -245,20 +358,24 @@ async function discoverRelationshipsWithClaude(
   company: ParsedCompany,
   apiKey: string
 ): Promise<Relationship[]> {
-  const prompt = `You are an expert financial analyst. Research and discover all relationships for the company "${company.name}" (ticker: ${company.ticker}).
+  const prompt = `You are an expert financial analyst. Research and discover all relationships for "${company.name}" (ASX: ${company.ticker}).
 
-Find and list:
-1. Major shareholders (>2% holdings)
-2. Board members and executives
-3. Auditors and financial advisors
-4. Brokers and underwriters
-5. Industry competitors
-6. PE firms or investment groups with interest
+Find entities in these categories:
+1. Major shareholders (with %)
+2. Board members and executives (with roles)
+3. Auditors
+4. Brokers with research coverage
+5. Legal and M&A advisors
+6. Lenders/banks
+7. Competitors
+8. Major suppliers and customers (B2B)
+9. Private equity firms with interest
+10. Government/regulatory bodies
+11. Share registries
 
-Format your response as a JSON array:
+Format as JSON array:
 [
-  {"name": "BDO Australia", "type": "auditor", "details": "External auditor"},
-  {"name": "Soul Pattinson", "type": "shareholder", "details": "9.7% shareholder"}
+  {"name": "Entity Name", "type": "shareholder|director|executive|auditor|broker|advisor|lender|competitor|supplier|customer|pe_firm|government|registry", "details": "specific details"}
 ]`;
 
   try {
@@ -271,7 +388,7 @@ Format your response as a JSON array:
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -297,18 +414,25 @@ Format your response as a JSON array:
   }
 }
 
-function mapEntityType(type: string): 'company' | 'person' | 'firm' {
-  const typeMap: Record<string, 'company' | 'person' | 'firm'> = {
+// ============ UTILITIES ============
+
+function mapEntityType(type: string): 'company' | 'person' | 'firm' | 'government' {
+  const typeMap: Record<string, 'company' | 'person' | 'firm' | 'government'> = {
     shareholder: 'company',
+    director: 'person',
     executive: 'person',
     auditor: 'firm',
     broker: 'firm',
     advisor: 'firm',
+    lender: 'firm',
     competitor: 'company',
+    supplier: 'company',
+    customer: 'company',
+    registry: 'firm',
     pe_firm: 'company',
-    director: 'person',
-    ceo: 'person',
-    cfo: 'person',
+    government: 'government',
+    union: 'firm',
+    insurer: 'firm',
   };
   return typeMap[type.toLowerCase()] || 'firm';
 }
@@ -317,17 +441,19 @@ function calculateWhoCaresFromRelationships(
   companies: Array<ParsedCompany & { relationships: Relationship[] }>
 ) {
   const entityMap = new Map<string, Set<string>>();
-  const entityDetails = new Map<string, { type: string; category: string }>();
+  const entityDetails = new Map<string, { type: string; category: string; details: string }>();
 
   for (const company of companies) {
     for (const rel of company.relationships) {
-      if (!entityMap.has(rel.entity_name)) {
-        entityMap.set(rel.entity_name, new Set());
+      const normalizedName = rel.entity_name.trim();
+      if (!entityMap.has(normalizedName)) {
+        entityMap.set(normalizedName, new Set());
       }
-      entityMap.get(rel.entity_name)!.add(company.ticker);
-      entityDetails.set(rel.entity_name, {
+      entityMap.get(normalizedName)!.add(company.ticker);
+      entityDetails.set(normalizedName, {
         type: rel.entity_type,
         category: rel.category,
+        details: rel.details,
       });
     }
   }
@@ -338,7 +464,7 @@ function calculateWhoCaresFromRelationships(
       const details = entityDetails.get(name)!;
       return {
         entity_name: name,
-        entity_type: details.type as 'firm' | 'company' | 'person',
+        entity_type: details.type as 'firm' | 'company' | 'person' | 'government',
         category: details.category,
         exposure_count: tickers.size,
         exposed_companies: Array.from(tickers),
